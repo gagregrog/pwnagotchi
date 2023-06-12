@@ -48,16 +48,16 @@ class Haptic(plugins.Plugin):
         logging.info('[haptic] plugin loaded and ready on pin {}'.format(buzzer_gpio))
 
         self.buzzer = Buzzer(buzzer_gpio)
-        self.buzzer.buzz(2)
-
-    def on_handshake(self, agent, filename, access_point, client_station):
-        self.buzzer.buzz(4)
-
-    def on_association(self, agent, access_point):
         self.buzzer.buzz(1)
 
+    def on_handshake(self, agent, filename, access_point, client_station):
+        self.buzzer.buzz(2)
+
+    def on_association(self, agent, access_point):
+        self.buzzer.buzz(0.1)
+
     def on_deauthentication(self, agent, access_point, client_station):
-        self.buzzer.buzz(2.5)
+        self.buzzer.buzz(0.5)
 
     def on_peer_detected(self, agent, peer):
-        self.buzzer.buzz(8)
+        self.buzzer.buzz(4)
