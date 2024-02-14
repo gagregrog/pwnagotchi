@@ -14,6 +14,21 @@ DEFAULT_BUZZ_TIMES = {
     'on_peer_detected': 1.5,
 }
 
+class Switch:
+    def __init__(self, pin, active_high=False):
+        self.pin = pin
+        self.active_high = active_high
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+    def is_on(self):
+        reading = GPIO.input(self.pin)
+        return bool(reading if self.active_high else not reading)
+
+    def cleanup(self):
+        GPIO.cleanup(self.pin)
+
 class Buzzer:
     """
     Helper class to manage the starting / stopping of the buzzer from within a child thread
@@ -48,6 +63,9 @@ class Buzzer:
             GPIO.output(self.pin, 0)
             self.thread = None
 
+    def cleanup(self):
+        GPIO.cleanup(self.pin)
+
 class Haptic(plugins.Plugin):
     """
     Pwnagotchi Haptic plugin to enable buzzer activity linked to lifecycle events
@@ -60,12 +78,17 @@ class Haptic(plugins.Plugin):
     def __init__(self):
         # self.options is only populated once self.on_loaded has been called
         self.buzzer = None
+        self.switch = None
 
     def on_loaded(self):
         buzzer_gpio = self.options.get('gpio')
         if not buzzer_gpio:
             logging.warning('[haptic] plugin misconfigured. Please provide "main.plugins.haptic.gpio = yourGpioNumber"')
             return None
+
+        switch_gpio = self.options.get('switch_gpio')
+        if switch_gpio:
+            self.switch = Switch(switch_gpio, active_high=bool(self.options.get('switch_active_high')))
 
         self.get_buzz_times()
         logging.info('[haptic] plugin loaded and ready on pin {}'.format(buzzer_gpio))
@@ -75,12 +98,16 @@ class Haptic(plugins.Plugin):
 
     def on_unload(self, ui):
         logging.info('[haptic] plugin disabled')
+        if self.buzzer:
+            self.buzzer.cleanup()
+        if self.switch:
+            self.switch.cleanup()
 
     def handle_callback(self, config_key):
         """
         Get the buzz time and buzz if it isn't set to 0
         """
-        if self.buzzer is None:
+        if self.buzzer is None or (self.switch and not self.switch.is_on()):
             return
 
         duration = self.buzz_times[config_key]
