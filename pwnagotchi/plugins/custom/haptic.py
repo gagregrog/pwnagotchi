@@ -127,7 +127,7 @@ class Haptic(plugins.Plugin):
         self.handle_callback('on_loaded')
 
     def on_ui_setup(self, ui):
-        ui.add_element(PLUGIN_NAME, Frame(path = f'{self.icons_path}/vibrate.png', xy = (ui.width() / 2 - 20, 0), reverse = bool(self.options.get('invert_icon'))))
+        ui.add_element(PLUGIN_NAME, Frame(path = f'{self.icons_path}/vibrate.png', xy = (int(ui.width() / 2) - 5, 0), reverse = bool(self.options.get('invert_icon'))))
 
     def on_unload(self, ui):
         info('plugin disabled')
