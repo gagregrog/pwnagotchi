@@ -1,8 +1,11 @@
+import os
 import time
 import logging
+from PIL import Image
 import RPi.GPIO as GPIO
 from threading import Thread
 import pwnagotchi.plugins as plugins
+from pwnagotchi.ui.components import Widget
 
 MIN_DURATION = 0
 MAX_DURATION = 2
@@ -13,6 +16,28 @@ DEFAULT_BUZZ_TIMES = {
     'on_deauthentication': 0.75,
     'on_peer_detected': 1.5,
 }
+PLUGIN_NAME = 'haptic'
+ICONS_DIR = 'haptic_icons'
+
+def info(message):
+    logging.info('[{}] {}'.format(PLUGIN_NAME, message))
+
+def warn(message):
+    logging.warning('[{}] {}'.format(PLUGIN_NAME, message))
+
+# Credits: https://github.com/roodriiigooo/PWNAGOTCHI-CUSTOM-FACES-MOD
+class Frame(Widget):
+    def __init__(self, path, xy, alpha = 0, reverse = False):
+        super().__init__(xy)
+        self.image = Image.open(path).resize((15, 15)).convert('RGBA')
+        self.alpha = alpha
+        self.reverse = reverse
+
+    def draw(self, canvas, drawer):
+        r, g, b, a = self.image.split()
+        alpha = Image.new('L', self.image.size, self.alpha)
+        canvas.paste(self.image, self.xy, mask = alpha)
+        canvas.paste(255 if self.reverse else 0, self.xy, mask = a)
 
 class Switch:
     def __init__(self, pin, active_high=False):
@@ -58,7 +83,7 @@ class Buzzer:
             GPIO.output(self.pin, 1)
             time.sleep(duration)
         except:
-            logging.warning('[haptic] error in haptic thread')
+            warn('error in haptic thread')
         finally:
             GPIO.output(self.pin, 0)
             self.thread = None
@@ -81,27 +106,37 @@ class Haptic(plugins.Plugin):
         self.switch = None
 
     def on_loaded(self):
+        self.icons_path = os.path.join(os.path.dirname(__file__), ICONS_DIR)
         buzzer_gpio = self.options.get('gpio')
         if not buzzer_gpio:
-            logging.warning('[haptic] plugin misconfigured. Please provide "main.plugins.haptic.gpio = yourGpioNumber"')
+            warn('plugin misconfigured. Please provide "main.plugins.haptic.gpio = yourGpioNumber"')
             return None
 
         switch_gpio = self.options.get('switch_gpio')
         if switch_gpio:
-            self.switch = Switch(switch_gpio, active_high=bool(self.options.get('switch_active_high')))
+            active_high = self.options.get('switch_active_high')
+            info('switch is active {}'.format('high' if active_high else 'low'))
+            self.switch = Switch(switch_gpio, active_high=bool(active_high))
+            info('feedback is currently {}'.format('on' if self.switch.is_on() else 'off'))
+
 
         self.get_buzz_times()
-        logging.info('[haptic] plugin loaded and ready on pin {}'.format(buzzer_gpio))
+        info('plugin loaded and ready on pin {}'.format(buzzer_gpio))
 
         self.buzzer = Buzzer(buzzer_gpio)
         self.handle_callback('on_loaded')
 
+    def on_ui_setup(self, ui):
+        ui.add_element(PLUGIN_NAME, Frame(path = f'{self.icons_path}/vibrate.png', xy = (ui.width() / 2 - 20, 0), reverse = bool(self.options.get('invert_icon'))))
+
     def on_unload(self, ui):
-        logging.info('[haptic] plugin disabled')
+        info('plugin disabled')
         if self.buzzer:
             self.buzzer.cleanup()
         if self.switch:
             self.switch.cleanup()
+        with ui._lock:
+            ui.remove_element(PLUGIN_NAME)
 
     def handle_callback(self, config_key):
         """
@@ -137,7 +172,7 @@ class Haptic(plugins.Plugin):
             buzz_time = self.resolve_buzz_time(config_key, default_buzz_duration)
             self.buzz_times[config_key] = buzz_time
             if debug:
-                logging.info('[haptic] {}={}'.format(config_key, buzz_time))
+                info('{}={}'.format(config_key, buzz_time))
 
     def resolve_buzz_time(self, config_key, default_duration):
         """
@@ -150,9 +185,9 @@ class Haptic(plugins.Plugin):
         try:
             duration = float(config_duration)
             if duration < MIN_DURATION or duration > MAX_DURATION:
-                logging.warning('[haptic] invalid option for main.plugins.haptic.{}. Value must be >= {} and <= {}. Got: {}. Using default: {}'.format(config_key, MIN_DURATION, MAX_DURATION, duration, default_duration))
+                warn('invalid option for main.plugins.haptic.{}. Value must be >= {} and <= {}. Got: {}. Using default: {}'.format(config_key, MIN_DURATION, MAX_DURATION, duration, default_duration))
                 return default_duration
             return duration
         except Exception:
-            logging.warning('[haptic] invalid option for main.plugins.haptic.{}. Value must be >= {} and <= {}. Got: {}. Using default: {}'.format(config_key, MIN_DURATION, MAX_DURATION, duration, default_duration))
+            warn('invalid option for main.plugins.haptic.{}. Value must be >= {} and <= {}. Got: {}. Using default: {}'.format(config_key, MIN_DURATION, MAX_DURATION, duration, default_duration))
             return default_duration
