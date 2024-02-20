@@ -40,12 +40,26 @@ class Frame(Widget):
         canvas.paste(255 if self.reverse else 0, self.xy, mask = a)
 
 class Switch:
-    def __init__(self, pin, active_high=False):
+    def __init__(self, pin, active_high=False, on_toggle=None):
         self.pin = pin
         self.active_high = active_high
+        self.thread = None
+        self.on_toggle = on_toggle
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+        if on_toggle:
+            GPIO.add_event_detect(self.pin, GPIO.BOTH, callback=self.handle_toggle, bouncetime=600)
+
+    def handle_toggle(self, channel):
+        if self.thread is None and self.on_toggle:
+            self.thread = Thread(target=self.__handle_toggle, args=(channel,))
+            self.thread.start()
+
+    def __handle_toggle(self, channel):
+        self.on_toggle(self.is_on())
+        self.thread = None
 
     def is_on(self):
         reading = GPIO.input(self.pin)
@@ -116,7 +130,7 @@ class Haptic(plugins.Plugin):
         if switch_gpio:
             active_high = self.options.get('switch_active_high')
             info('switch is active {}'.format('high' if active_high else 'low'))
-            self.switch = Switch(switch_gpio, active_high=bool(active_high))
+            self.switch = Switch(switch_gpio, active_high=bool(active_high), on_toggle=self.on_toggle)
             info('feedback is currently {}'.format('on' if self.switch.is_on() else 'off'))
 
 
@@ -126,8 +140,25 @@ class Haptic(plugins.Plugin):
         self.buzzer = Buzzer(buzzer_gpio)
         self.handle_callback('on_loaded')
 
+    def on_toggle(self, is_on):
+        info("Switch state changed: {}".format('on' if is_on else 'off'))
+
     def on_ui_setup(self, ui):
-        ui.add_element(PLUGIN_NAME, Frame(path = f'{self.icons_path}/vibrate.png', xy = (int(ui.width() / 2) - 5, 0), reverse = bool(self.options.get('invert_icon'))))
+        if self.switch:
+            xy = (int(ui.width() / 2) - 5, 0)
+            invert_icon = bool(self.options.get('invert_icon'))
+            self.icon = Frame(path = f'{self.icons_path}/vibrate.png', xy = xy, reverse = invert_icon)
+            self.empty_icon = Frame(path = f'{self.icons_path}/empty.png', xy = xy, reverse = invert_icon)
+            self.icon_visible = self.switch.is_on()
+            ui.add_element(PLUGIN_NAME, self.icon if self.switch.is_on() else self.empty_icon)
+
+    def on_ui_update(self, ui):
+        if self.switch and self.switch.is_on() and not self.icon_visible:
+            ui.set(PLUGIN_NAME, self.icon)
+            self.icon_visible = True
+        elif self.switch and not self.switch.is_on() and self.icon_visible:
+            ui.set(PLUGIN_NAME, self.empty_icon)
+            self.icon_visible = False
 
     def on_unload(self, ui):
         info('plugin disabled')
@@ -135,8 +166,9 @@ class Haptic(plugins.Plugin):
             self.buzzer.cleanup()
         if self.switch:
             self.switch.cleanup()
-        with ui._lock:
-            ui.remove_element(PLUGIN_NAME)
+            if (ui.has_element(PLUGIN_NAME)):
+                with ui._lock:
+                    ui.remove_element(PLUGIN_NAME)
 
     def handle_callback(self, config_key):
         """
