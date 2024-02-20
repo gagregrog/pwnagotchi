@@ -51,7 +51,7 @@ class Switch:
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
         if on_toggle:
-            GPIO.add_event_detect(self.pin, GPIO.BOTH, callback=self.handle_toggle, bouncetime=600)
+            GPIO.add_event_detect(self.pin, GPIO.BOTH, callback=self.handle_toggle, bouncetime=750)
 
     def handle_toggle(self, channel):
         if self.thread is None and self.on_toggle:
@@ -130,9 +130,9 @@ class Haptic(plugins.Plugin):
             warn('plugin misconfigured. Please provide "main.plugins.haptic.gpio = yourGpioNumber"')
             return None
 
-        switch_gpio = self.options.get('switch_gpio')
+        switch_gpio = self.options['switch'].get('gpio') if self.options.get('switch') else None
         if switch_gpio:
-            active_high = self.options.get('switch_active_high')
+            active_high = self.options['switch'].get('active_high')
             info('switch is active {}'.format('high' if active_high else 'low'))
             self.switch = Switch(switch_gpio, active_high=bool(active_high), on_toggle=self.update_icon_if_needed)
             info('feedback is currently {}'.format('on' if self.switch.is_on() else 'off'))
