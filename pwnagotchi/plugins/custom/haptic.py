@@ -25,7 +25,8 @@ def info(message):
 def warn(message):
     logging.warning('[{}] {}'.format(PLUGIN_NAME, message))
 
-# Credits: https://github.com/roodriiigooo/PWNAGOTCHI-CUSTOM-FACES-MOD
+# Cretit 1: https://github.com/cyberartemio/wof-pwnagotchi-plugin
+# Credits2: https://github.com/roodriiigooo/PWNAGOTCHI-CUSTOM-FACES-MOD
 class Frame(Widget):
     def __init__(self, path, xy, alpha = 0, reverse = False):
         super().__init__(xy)
@@ -59,6 +60,7 @@ class Switch:
 
     def __handle_toggle(self, channel):
         self.on_toggle(self.is_on())
+        time.sleep(0.75)
         self.thread = None
 
     def is_on(self):
@@ -116,11 +118,13 @@ class Haptic(plugins.Plugin):
 
     def __init__(self):
         # self.options is only populated once self.on_loaded has been called
+        self.icons_path = os.path.join(os.path.dirname(__file__), ICONS_DIR)
         self.buzzer = None
         self.switch = None
+        self.icon = None
+        self.empty_icon = None
 
     def on_loaded(self):
-        self.icons_path = os.path.join(os.path.dirname(__file__), ICONS_DIR)
         buzzer_gpio = self.options.get('gpio')
         if not buzzer_gpio:
             warn('plugin misconfigured. Please provide "main.plugins.haptic.gpio = yourGpioNumber"')
@@ -130,35 +134,37 @@ class Haptic(plugins.Plugin):
         if switch_gpio:
             active_high = self.options.get('switch_active_high')
             info('switch is active {}'.format('high' if active_high else 'low'))
-            self.switch = Switch(switch_gpio, active_high=bool(active_high), on_toggle=self.on_toggle)
+            self.switch = Switch(switch_gpio, active_high=bool(active_high), on_toggle=self.update_icon_if_needed)
             info('feedback is currently {}'.format('on' if self.switch.is_on() else 'off'))
 
-
-        self.get_buzz_times()
         info('plugin loaded and ready on pin {}'.format(buzzer_gpio))
-
+        self.get_buzz_times()
         self.buzzer = Buzzer(buzzer_gpio)
         self.handle_callback('on_loaded')
 
-    def on_toggle(self, is_on):
+    def update_icon_if_needed(self, is_on):
+        if not self.switch or self.icon_visible == is_on:
+            return
+
         info("Switch state changed: {}".format('on' if is_on else 'off'))
+        if is_on:
+            self.handle_callback('on_loaded')
+        with self.ui._lock:
+            # add_element will overwrite the existing element if it exists
+            self.ui.add_element(PLUGIN_NAME, self.icon if is_on else self.empty_icon)
+        self.icon_visible = is_on
 
     def on_ui_setup(self, ui):
-        if self.switch:
-            xy = (int(ui.width() / 2) - 5, 0)
-            invert_icon = bool(self.options.get('invert_icon'))
-            self.icon = Frame(path = f'{self.icons_path}/vibrate.png', xy = xy, reverse = invert_icon)
-            self.empty_icon = Frame(path = f'{self.icons_path}/empty.png', xy = xy, reverse = invert_icon)
-            self.icon_visible = self.switch.is_on()
-            ui.add_element(PLUGIN_NAME, self.icon if self.switch.is_on() else self.empty_icon)
+        self.ui = ui
+        xy = (int(ui.width() / 2) - 5, 0)
+        invert_icon = bool(self.options.get('invert_icon'))
+        self.icon = Frame(path = f'{self.icons_path}/vibrate.png', xy = xy, reverse = invert_icon)
+        self.empty_icon = Frame(path = f'{self.icons_path}/empty.png', xy = xy, reverse = invert_icon)
+        self.icon_visible = self.switch.is_on()
+        ui.add_element(PLUGIN_NAME, self.icon if (not self.switch or self.icon_visible) else self.empty_icon)
 
     def on_ui_update(self, ui):
-        if self.switch and self.switch.is_on() and not self.icon_visible:
-            ui.set(PLUGIN_NAME, self.icon)
-            self.icon_visible = True
-        elif self.switch and not self.switch.is_on() and self.icon_visible:
-            ui.set(PLUGIN_NAME, self.empty_icon)
-            self.icon_visible = False
+        self.update_icon_if_needed(self.switch.is_on())
 
     def on_unload(self, ui):
         info('plugin disabled')
@@ -199,12 +205,9 @@ class Haptic(plugins.Plugin):
         Either use the default buzz time or the value provide in config.toml
         """
         self.buzz_times = {}
-        debug = bool(self.options.get('debug'))
         for config_key, default_buzz_duration in DEFAULT_BUZZ_TIMES.items():
             buzz_time = self.resolve_buzz_time(config_key, default_buzz_duration)
             self.buzz_times[config_key] = buzz_time
-            if debug:
-                info('{}={}'.format(config_key, buzz_time))
 
     def resolve_buzz_time(self, config_key, default_duration):
         """
