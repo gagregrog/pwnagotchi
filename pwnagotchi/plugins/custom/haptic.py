@@ -160,11 +160,11 @@ class Haptic(plugins.Plugin):
         invert_icon = bool(self.options.get('invert_icon'))
         self.icon = Frame(path = f'{self.icons_path}/vibrate.png', xy = xy, reverse = invert_icon)
         self.empty_icon = Frame(path = f'{self.icons_path}/empty.png', xy = xy, reverse = invert_icon)
-        self.icon_visible = self.switch.is_on()
+        self.icon_visible = self.switch.is_on() if self.switch else True
         ui.add_element(PLUGIN_NAME, self.icon if (not self.switch or self.icon_visible) else self.empty_icon)
 
     def on_ui_update(self, ui):
-        self.update_icon_if_needed(self.switch.is_on())
+        self.update_icon_if_needed(self.switch.is_on() if self.switch else True)
 
     def on_unload(self, ui):
         info('plugin disabled')
